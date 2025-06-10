@@ -11,7 +11,7 @@ COPY dialer/ dialer/
 COPY registry/ registry/
 COPY services/ services/
 COPY tls/ tls/
-COPY tracing/ tracing/
+COPY oteltracing/ oteltracing/
 COPY tune/ tune/
 
 COPY config.json config.json

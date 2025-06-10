@@ -15,11 +15,11 @@ import (
 	pb "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/rate/proto"
 	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tls"
 	"github.com/google/uuid"
-	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
-	"github.com/opentracing/opentracing-go"
 	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 )
@@ -32,7 +32,7 @@ type Server struct {
 
 	uuid string
 
-	Tracer      opentracing.Tracer
+	Tracer      trace.Tracer
 	Port        int
 	IpAddr      string
 	MongoClient *mongo.Client
@@ -42,7 +42,6 @@ type Server struct {
 
 // Run starts the server
 func (s *Server) Run() error {
-	opentracing.SetGlobalTracer(s.Tracer)
 
 	if s.Port == 0 {
 		return fmt.Errorf("server port must be set")
@@ -58,7 +57,7 @@ func (s *Server) Run() error {
 			PermitWithoutStream: true,
 		}),
 		grpc.UnaryInterceptor(
-			otgrpc.OpenTracingServerInterceptor(s.Tracer),
+			otelgrpc.UnaryServerInterceptor(),
 		),
 	}
 
@@ -102,11 +101,9 @@ func (s *Server) GetRates(ctx context.Context, req *pb.Request) (*pb.Result, err
 		rateMap[hotelID] = struct{}{}
 	}
 	// first check memcached(get-multi)
-	memSpan, _ := opentracing.StartSpanFromContext(ctx, "memcached_get_multi_rate")
-	memSpan.SetTag("span.kind", "client")
-
+	ctx, span := s.Tracer.Start(ctx, "memcached_get_multi_rate", trace.WithSpanKind(trace.SpanKindClient))
 	resMap, err := s.MemcClient.GetMulti(hotelIds)
-	memSpan.Finish()
+	span.End()()
 
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
@@ -134,8 +131,7 @@ func (s *Server) GetRates(ctx context.Context, req *pb.Request) (*pb.Result, err
 				log.Trace().Msgf("memc miss, hotelId = %s", id)
 				log.Trace().Msg("memcached miss, set up mongo connection")
 
-				mongoSpan, _ := opentracing.StartSpanFromContext(ctx, "mongo_rate")
-				mongoSpan.SetTag("span.kind", "client")
+				ctx, span := s.Tracer.Start(ctx, "mongo_rate", trace.WithSpanKind(trace.SpanKindClient))
 
 				// memcached miss, set up mongo connection
 				collection := s.MongoClient.Database("rate-db").Collection("inventory")
@@ -150,7 +146,7 @@ func (s *Server) GetRates(ctx context.Context, req *pb.Request) (*pb.Result, err
 					log.Error().Msgf("Failed get rate data: ", err)
 				}
 
-				mongoSpan.Finish()
+				span.End()
 
 				memcStr := ""
 				if err != nil {
