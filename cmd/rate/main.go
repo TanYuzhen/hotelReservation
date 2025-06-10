@@ -1,15 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"io/ioutil"
 	"os"
 	"strconv"
 
+	oteltracing "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/oteltracing"
 	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
 	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/rate"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tracing"
 	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tune"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -53,10 +54,11 @@ func main() {
 	flag.Parse()
 
 	log.Info().Msgf("Initializing jaeger agent [service name: %v | host: %v]...", "rate", *jaegerAddr)
-	tracer, err := tracing.Init("rate", *jaegerAddr)
+	tracer, err := oteltracing.Init("rate", *jaegerAddr)
 	if err != nil {
 		log.Panic().Msgf("Got error while initializing jaeger agent: %v", err)
 	}
+	defer oteltracing.Shutdown(context.Background())
 	log.Info().Msg("Jaeger agent initialized")
 
 	log.Info().Msgf("Initializing consul agent [host: %v]...", *consulAddr)

@@ -11,12 +11,12 @@ import (
 	pb "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/recommendation/proto"
 	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tls"
 	"github.com/google/uuid"
-	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
 	"github.com/hailocab/go-geoindex"
-	"github.com/opentracing/opentracing-go"
 	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 )
@@ -30,7 +30,7 @@ type Server struct {
 	hotels map[string]Hotel
 	uuid   string
 
-	Tracer      opentracing.Tracer
+	Tracer      trace.Tracer
 	Port        int
 	IpAddr      string
 	MongoClient *mongo.Client
@@ -57,7 +57,7 @@ func (s *Server) Run() error {
 			PermitWithoutStream: true,
 		}),
 		grpc.UnaryInterceptor(
-			otgrpc.OpenTracingServerInterceptor(s.Tracer),
+			otelgrpc.UnaryServerInterceptor(),
 		),
 	}
 

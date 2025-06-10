@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/dialer"
+	oteltracing "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/oteltracing"
 	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
 	attractions "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/attractions/proto"
 	profile "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/profile/proto"
@@ -18,10 +19,10 @@ import (
 	search "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/search/proto"
 	user "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/user/proto"
 	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tls"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tracing"
 	_ "github.com/mbobakov/grpc-consul-resolver"
-	"github.com/opentracing/opentracing-go"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 )
 
@@ -44,7 +45,7 @@ type Server struct {
 	IpAddr     string
 	ConsulAddr string
 	Port       int
-	Tracer     opentracing.Tracer
+	Tracer     trace.Tracer
 	Registry   *registry.Client
 }
 
@@ -92,7 +93,7 @@ func (s *Server) Run() error {
 	log.Info().Msg("Successful")
 
 	log.Trace().Msg("frontend before mux")
-	mux := tracing.NewServeMux(s.Tracer)
+	mux := oteltracing.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(staticContent)))
 	mux.Handle("/hotels", http.HandlerFunc(s.searchHandler))
 	mux.Handle("/recommendations", http.HandlerFunc(s.recommendHandler))
