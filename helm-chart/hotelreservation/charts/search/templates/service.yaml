@@ -1,0 +1,20 @@
+{{ include "hotelreservation.templates.baseService" . }}
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   annotations:
+#     kompose.cmd: kompose convert
+#     kompose.version: 1.22.0 (955b78124)
+#   creationTimestamp: null
+#   labels:
+#     io.kompose.service: search
+#   name: search
+# spec:
+#   ports:
+#     - name: grpc
+#       port: 8082
+#       targetPort: 8082
+#   selector:
+#     io.kompose.service: search
+# status:
+#   loadBalancer: {}
