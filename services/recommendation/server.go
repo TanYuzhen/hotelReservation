@@ -7,18 +7,19 @@ import (
 	"net"
 	"time"
 
-	"hotelReservation/registry"
-	pb "hotelReservation/services/recommendation/proto"
-	"hotelReservation/tls"
 	"github.com/google/uuid"
 	"github.com/hailocab/go-geoindex"
 	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+	"hotelReservation/registry"
+	pb "hotelReservation/services/recommendation/proto"
+	"hotelReservation/tls"
 )
 
 const name = "srv-recommendation"
@@ -30,12 +31,12 @@ type Server struct {
 	hotels map[string]Hotel
 	uuid   string
 
-	Tracer      trace.Tracer
+	Tracer         trace.Tracer
 	TracerProvider trace.TracerProvider
-	Port        int
-	IpAddr      string
-	MongoClient *mongo.Client
-	Registry    *registry.Client
+	Port           int
+	IpAddr         string
+	MongoClient    *mongo.Client
+	Registry       *registry.Client
 }
 
 // Run starts the server
@@ -58,7 +59,10 @@ func (s *Server) Run() error {
 			PermitWithoutStream: true,
 		}),
 		grpc.UnaryInterceptor(
-			otelgrpc.UnaryServerInterceptor(),
+			otelgrpc.UnaryServerInterceptor(
+				otelgrpc.WithTracerProvider(s.TracerProvider),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			),
 		),
 	}
 

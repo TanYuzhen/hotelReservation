@@ -5,20 +5,21 @@ import (
 	"net"
 	"time"
 
+	"github.com/google/uuid"
+	_ "github.com/mbobakov/grpc-consul-resolver"
+	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+	context "golang.org/x/net/context"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 	"hotelReservation/dialer"
 	"hotelReservation/registry"
 	geo "hotelReservation/services/geo/proto"
 	rate "hotelReservation/services/rate/proto"
 	pb "hotelReservation/services/search/proto"
 	"hotelReservation/tls"
-	"github.com/google/uuid"
-	_ "github.com/mbobakov/grpc-consul-resolver"
-	"github.com/rs/zerolog/log"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/trace"
-	context "golang.org/x/net/context"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/keepalive"
 )
 
 const name = "srv-search"
@@ -31,13 +32,13 @@ type Server struct {
 	rateClient rate.RateClient
 	uuid       string
 
-	Tracer     trace.Tracer
+	Tracer         trace.Tracer
 	TracerProvider trace.TracerProvider
-	Port       int
-	IpAddr     string
-	ConsulAddr string
-	KnativeDns string
-	Registry   *registry.Client
+	Port           int
+	IpAddr         string
+	ConsulAddr     string
+	KnativeDns     string
+	Registry       *registry.Client
 }
 
 // Run starts the server
@@ -56,7 +57,10 @@ func (s *Server) Run() error {
 			PermitWithoutStream: true,
 		}),
 		grpc.UnaryInterceptor(
-			otelgrpc.UnaryServerInterceptor(),
+			otelgrpc.UnaryServerInterceptor(
+				otelgrpc.WithTracerProvider(s.TracerProvider),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			),
 		),
 	}
 
@@ -122,17 +126,16 @@ func (s *Server) getGprcConn(ctx context.Context, name string) (*grpc.ClientConn
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s.%s", s.ConsulAddr, name, s.KnativeDns),
 			ctx,
-			dialer.WithTracer(s.Tracer))
+			dialer.WithTracerProvider(s.TracerProvider))
 	} else {
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s", s.ConsulAddr, name),
 			ctx,
-			dialer.WithTracer(s.Tracer),
+			dialer.WithTracerProvider(s.TracerProvider),
 			dialer.WithBalancer(s.Registry.Client),
 		)
 	}
 }
-
 
 // Nearby returns ids of nearby hotels ordered by ranking algo
 func (s *Server) Nearby(ctx context.Context, req *pb.NearbyRequest) (*pb.SearchResult, error) {
