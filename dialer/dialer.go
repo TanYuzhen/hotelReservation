@@ -7,21 +7,26 @@ import (
 
 	// "hotelReservation/tls"
 	consul "github.com/hashicorp/consul/api"
-	"google.golang.org/grpc/credentials/insecure"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	// "google.golang.org/grpc/keepalive"
 )
 
 // DialOption allows optional config for dialer
 type DialOption func(name string) (grpc.DialOption, error)
 
-// WithTracer traces rpc calls
-func WithTracer(tracer trace.Tracer) DialOption {
-    return func(name string) (grpc.DialOption, error) {
-        return grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()), nil
-    }
+// WithTracerProvider configures tracing for grpc clients.
+func WithTracerProvider(tp trace.TracerProvider) DialOption {
+	return func(name string) (grpc.DialOption, error) {
+		return grpc.WithUnaryInterceptor(
+			otelgrpc.UnaryClientInterceptor(
+				otelgrpc.WithTracerProvider(tp),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			)), nil
+	}
 }
 
 // WithBalancer enables client side load balancing
@@ -62,11 +67,30 @@ func Dial(name string, ctx context.Context, opts ...DialOption) (*grpc.ClientCon
 	// return conn, nil
 	ctx, cancel := context.WithTimeout(ctx, time.Second*3)
 	defer cancel()
-	conn, err := grpc.DialContext(ctx, name,
+
+	dialopts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
-		grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()),
-	)
+		grpc.WithUnaryInterceptor(
+			otelgrpc.UnaryClientInterceptor(
+				otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			)),
+		grpc.WithStreamInterceptor(
+			otelgrpc.StreamClientInterceptor(
+				otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			)),
+	}
+
+	for _, fn := range opts {
+		opt, err := fn(name)
+		if err != nil {
+			return nil, fmt.Errorf("config error: %v", err)
+		}
+		dialopts = append(dialopts, opt)
+	}
+
+	conn, err := grpc.DialContext(ctx, name, dialopts...)
 	if err != nil {
 		return nil, fmt.Errorf("config error: %v", err)
 	}
