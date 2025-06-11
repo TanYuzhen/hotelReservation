@@ -1,6 +1,7 @@
 package frontend
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 	"strconv"
 
 	"hotelReservation/dialer"
-	oteltracing "hotelReservation/oteltracing"
+	// oteltracing "hotelReservation/oteltracing"
 	"hotelReservation/registry"
 	attractions "hotelReservation/services/attractions/proto"
 	profile "hotelReservation/services/profile/proto"
@@ -23,6 +24,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
+    // "github.com/gorilla/mux"
+    // "go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -63,55 +66,56 @@ func (s *Server) Run() error {
 	}
 
 	log.Info().Msg("Initializing gRPC clients...")
-	if err := s.initSearchClient("srv-search"); err != nil {
+	ctx := context.Background()
+	if err := s.initSearchClient(ctx, "srv-search"); err != nil {
 		return err
 	}
 
-	if err := s.initProfileClient("srv-profile"); err != nil {
+	if err := s.initProfileClient(ctx,"srv-profile"); err != nil {
 		return err
 	}
 
-	if err := s.initRecommendationClient("srv-recommendation"); err != nil {
+	if err := s.initRecommendationClient(ctx,"srv-recommendation"); err != nil {
 		return err
 	}
 
-	if err := s.initUserClient("srv-user"); err != nil {
+	if err := s.initUserClient(ctx,"srv-user"); err != nil {
 		return err
 	}
 
-	if err := s.initReservation("srv-reservation"); err != nil {
+	if err := s.initReservation(ctx, "srv-reservation"); err != nil {
 		return err
 	}
 
-	if err := s.initReviewClient("srv-review"); err != nil {
+	if err := s.initReviewClient(ctx, "srv-review"); err != nil {
 		return err
 	}
 
-	if err := s.initAttractionsClient("srv-attractions"); err != nil {
+	if err := s.initAttractionsClient(ctx, "srv-attractions"); err != nil {
 		return err
 	}
 
 	log.Info().Msg("Successful")
 
 	log.Trace().Msg("frontend before mux")
-	mux := oteltracing.NewServeMux()
-	handler := otelhttp.NewHandler(mux, "frontend")
-	mux.Handle("/", http.FileServer(http.FS(staticContent)))
-	mux.Handle("/hotels", http.HandlerFunc(s.searchHandler))
-	mux.Handle("/recommendations", http.HandlerFunc(s.recommendHandler))
-	mux.Handle("/user", http.HandlerFunc(s.userHandler))
-	mux.Handle("/review", http.HandlerFunc(s.reviewHandler))
-	mux.Handle("/restaurants", http.HandlerFunc(s.restaurantHandler))
-	mux.Handle("/museums", http.HandlerFunc(s.museumHandler))
-	mux.Handle("/cinema", http.HandlerFunc(s.cinemaHandler))
-	mux.Handle("/reservation", http.HandlerFunc(s.reservationHandler))
-
+	mux := http.NewServeMux()
+	// Wrap FileServer with OpenTelemetry
+	fileServer := http.FileServer(http.FS(staticContent))
+	mux.Handle("/", otelhttp.NewHandler(fileServer, "static-files"))
+	// Wrap each handler with OpenTelemetry
+	mux.Handle("/hotels", otelhttp.NewHandler(http.HandlerFunc(s.searchHandler), "hotels"))
+	mux.Handle("/recommendations", otelhttp.NewHandler(http.HandlerFunc(s.recommendHandler), "recommendations"))
+	mux.Handle("/user", otelhttp.NewHandler(http.HandlerFunc(s.userHandler), "user"))
+	mux.Handle("/review", otelhttp.NewHandler(http.HandlerFunc(s.reviewHandler), "review"))
+	mux.Handle("/restaurants", otelhttp.NewHandler(http.HandlerFunc(s.restaurantHandler), "restaurants"))
+	mux.Handle("/museums", otelhttp.NewHandler(http.HandlerFunc(s.museumHandler), "museums"))
+	mux.Handle("/cinema", otelhttp.NewHandler(http.HandlerFunc(s.cinemaHandler), "cinema"))
+	mux.Handle("/reservation", otelhttp.NewHandler(http.HandlerFunc(s.reservationHandler), "reservation"))
 	log.Trace().Msg("frontend starts serving")
-
 	tlsconfig := tls.GetHttpsOpt()
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.Port),
-		Handler: handler,
+		Handler: mux,
 	}
 	if tlsconfig != nil {
 		log.Info().Msg("Serving https")
@@ -123,8 +127,8 @@ func (s *Server) Run() error {
 	}
 }
 
-func (s *Server) initSearchClient(name string) error {
-	conn, err := s.getGprcConn(name)
+func (s *Server) initSearchClient(ctx context.Context, name string) error {
+	conn, err := s.getGprcConn(ctx,name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -132,12 +136,8 @@ func (s *Server) initSearchClient(name string) error {
 	return nil
 }
 
-func (s *Server) initReviewClient(name string) error {
-	conn, err := dialer.Dial(
-		name,
-		s.TracerProvider,
-		dialer.WithBalancer(s.Registry.Client),
-	)
+func (s *Server) initReviewClient(ctx context.Context, name string) error {
+	conn, err := s.getGprcConn(ctx,name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -145,12 +145,8 @@ func (s *Server) initReviewClient(name string) error {
 	return nil
 }
 
-func (s *Server) initAttractionsClient(name string) error {
-	conn, err := dialer.Dial(
-		name,
-		s.TracerProvider,
-		dialer.WithBalancer(s.Registry.Client),
-	)
+func (s *Server) initAttractionsClient(ctx context.Context, name string) error {
+	conn, err := s.getGprcConn(ctx,name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -158,8 +154,8 @@ func (s *Server) initAttractionsClient(name string) error {
 	return nil
 }
 
-func (s *Server) initProfileClient(name string) error {
-	conn, err := s.getGprcConn(name)
+func (s *Server) initProfileClient(ctx context.Context, name string) error {
+	conn, err := s.getGprcConn(ctx,name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -167,8 +163,8 @@ func (s *Server) initProfileClient(name string) error {
 	return nil
 }
 
-func (s *Server) initRecommendationClient(name string) error {
-	conn, err := s.getGprcConn(name)
+func (s *Server) initRecommendationClient(ctx context.Context, name string) error {
+	conn, err := s.getGprcConn(ctx,name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -176,8 +172,8 @@ func (s *Server) initRecommendationClient(name string) error {
 	return nil
 }
 
-func (s *Server) initUserClient(name string) error {
-	conn, err := s.getGprcConn(name)
+func (s *Server) initUserClient(ctx context.Context, name string) error {
+	conn, err := s.getGprcConn(ctx,name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -185,8 +181,8 @@ func (s *Server) initUserClient(name string) error {
 	return nil
 }
 
-func (s *Server) initReservation(name string) error {
-	conn, err := s.getGprcConn(name)
+func (s *Server) initReservation(ctx context.Context, name string) error {
+	conn, err := s.getGprcConn(ctx,name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -194,7 +190,7 @@ func (s *Server) initReservation(name string) error {
 	return nil
 }
 
-func (s *Server) getGprcConn(name string) (*grpc.ClientConn, error) {
+func (s *Server) getGprcConn(ctx context.Context, name string) (*grpc.ClientConn, error) {
 	log.Info().Msg("get Grpc conn is :")
 	log.Info().Msg(s.KnativeDns)
 	log.Info().Msg(fmt.Sprintf("%s.%s", name, s.KnativeDns))
@@ -202,11 +198,13 @@ func (s *Server) getGprcConn(name string) (*grpc.ClientConn, error) {
 	if s.KnativeDns != "" {
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s.%s", s.ConsulAddr, name, s.KnativeDns),
-			s.TracerProvider)
+			ctx,
+			dialer.WithTracer(s.Tracer))
 	} else {
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s", s.ConsulAddr, name),
-			s.TracerProvider,
+			ctx,
+			dialer.WithTracer(s.Tracer),
 			dialer.WithBalancer(s.Registry.Client),
 		)
 	}
@@ -217,11 +215,8 @@ func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	log.Trace().Msg("starts searchHandler")
-
-	// 修复：正确创建span并使用返回的context
 	ctx, span := s.Tracer.Start(ctx, "searchHandler")
 	defer span.End()
-
 	// in/out dates from query params
 	inDate, outDate := r.URL.Query().Get("inDate"), r.URL.Query().Get("outDate")
 	if inDate == "" || outDate == "" {
@@ -303,10 +298,8 @@ func (s *Server) recommendHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
 
-	// 修复：正确创建span并使用返回的context
 	ctx, span := s.Tracer.Start(ctx, "recommendHandler")
 	defer span.End()
-
 	sLat, sLon := r.URL.Query().Get("lat"), r.URL.Query().Get("lon")
 	if sLat == "" || sLon == "" {
 		http.Error(w, "Please specify location params", http.StatusBadRequest)
@@ -357,10 +350,8 @@ func (s *Server) reviewHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
 
-	// 修复：正确创建span并使用返回的context，并修正span名称
 	ctx, span := s.Tracer.Start(ctx, "reviewHandler")
 	defer span.End()
-
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
 		http.Error(w, "Please specify username and password", http.StatusBadRequest)
@@ -413,10 +404,8 @@ func (s *Server) restaurantHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
 
-	// 修复：正确创建span并使用返回的context
 	ctx, span := s.Tracer.Start(ctx, "restaurantHandler")
 	defer span.End()
-
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
 		http.Error(w, "Please specify username and password", http.StatusBadRequest)
@@ -468,10 +457,6 @@ func (s *Server) restaurantHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) museumHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
-
-	// 修复：正确创建span并使用返回的context
-	ctx, span := s.Tracer.Start(ctx, "museumHandler")
-	defer span.End()
 
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
@@ -525,10 +510,6 @@ func (s *Server) cinemaHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
 
-	// 修复：正确创建span并使用返回的context
-	ctx, span := s.Tracer.Start(ctx, "cinemaHandler")
-	defer span.End()
-
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
 		http.Error(w, "Please specify username and password", http.StatusBadRequest)
@@ -581,10 +562,8 @@ func (s *Server) userHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
 
-	// 修复：正确创建span并使用返回的context
 	ctx, span := s.Tracer.Start(ctx, "userHandler")
 	defer span.End()
-
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
 		http.Error(w, "Please specify username and password", http.StatusBadRequest)
@@ -616,11 +595,9 @@ func (s *Server) userHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reservationHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
-	
-	// 修复：正确创建span并使用返回的context
+
 	ctx, span := s.Tracer.Start(ctx, "reservationHandler")
 	defer span.End()
-
 	inDate, outDate := r.URL.Query().Get("inDate"), r.URL.Query().Get("outDate")
 	if inDate == "" || outDate == "" {
 		http.Error(w, "Please specify inDate/outDate params", http.StatusBadRequest)

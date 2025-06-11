@@ -67,11 +67,12 @@ func (s *Server) Run() error {
 	srv := grpc.NewServer(opts...)
 	pb.RegisterSearchServer(srv, s)
 
+	ctx := context.Background()
 	// init grpc clients
-	if err := s.initGeoClient("srv-geo"); err != nil {
+	if err := s.initGeoClient(ctx, "srv-geo"); err != nil {
 		return err
 	}
-	if err := s.initRateClient("srv-rate"); err != nil {
+	if err := s.initRateClient(ctx, "srv-rate"); err != nil {
 		return err
 	}
 
@@ -94,8 +95,8 @@ func (s *Server) Shutdown() {
 	s.Registry.Deregister(s.uuid)
 }
 
-func (s *Server) initGeoClient(name string) error {
-	conn, err := s.getGprcConn(name)
+func (s *Server) initGeoClient(ctx context.Context, name string) error {
+	conn, err := s.getGprcConn(ctx, name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -103,8 +104,8 @@ func (s *Server) initGeoClient(name string) error {
 	return nil
 }
 
-func (s *Server) initRateClient(name string) error {
-	conn, err := s.getGprcConn(name)
+func (s *Server) initRateClient(ctx context.Context, name string) error {
+	conn, err := s.getGprcConn(ctx, name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -112,19 +113,26 @@ func (s *Server) initRateClient(name string) error {
 	return nil
 }
 
-func (s *Server) getGprcConn(name string) (*grpc.ClientConn, error) {
+func (s *Server) getGprcConn(ctx context.Context, name string) (*grpc.ClientConn, error) {
+	log.Info().Msg("get Grpc conn is :")
+	log.Info().Msg(s.KnativeDns)
+	log.Info().Msg(fmt.Sprintf("%s.%s", name, s.KnativeDns))
+
 	if s.KnativeDns != "" {
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s.%s", s.ConsulAddr, name, s.KnativeDns),
-			s.TracerProvider)
+			ctx,
+			dialer.WithTracer(s.Tracer))
 	} else {
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s", s.ConsulAddr, name),
-			s.TracerProvider,
+			ctx,
+			dialer.WithTracer(s.Tracer),
 			dialer.WithBalancer(s.Registry.Client),
 		)
 	}
 }
+
 
 // Nearby returns ids of nearby hotels ordered by ranking algo
 func (s *Server) Nearby(ctx context.Context, req *pb.NearbyRequest) (*pb.SearchResult, error) {
