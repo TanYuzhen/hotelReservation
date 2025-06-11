@@ -98,6 +98,8 @@ func (s *Server) GetRates(ctx context.Context, req *pb.Request) (*pb.Result, err
 	res := new(pb.Result)
 
 	ratePlans := make(RatePlans, 0)
+	ctx, span := s.Tracer.Start(ctx, "rateService")
+	defer span.End()
 
 	hotelIds := []string{}
 	rateMap := make(map[string]struct{})
@@ -106,9 +108,9 @@ func (s *Server) GetRates(ctx context.Context, req *pb.Request) (*pb.Result, err
 		rateMap[hotelID] = struct{}{}
 	}
 	// first check memcached(get-multi)
-	ctx, span := s.Tracer.Start(ctx, "memcached_get_multi_rate", trace.WithSpanKind(trace.SpanKindClient))
+	// ctx, span := s.Tracer.Start(ctx, "memcached_get_multi_rate", trace.WithSpanKind(trace.SpanKindClient))
 	resMap, err := s.MemcClient.GetMulti(hotelIds)
-	span.End()
+	// span.End()
 
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
@@ -136,7 +138,7 @@ func (s *Server) GetRates(ctx context.Context, req *pb.Request) (*pb.Result, err
 				log.Trace().Msgf("memc miss, hotelId = %s", id)
 				log.Trace().Msg("memcached miss, set up mongo connection")
 
-				_, span := s.Tracer.Start(ctx, "mongo_rate", trace.WithSpanKind(trace.SpanKindClient))
+				// _, span := s.Tracer.Start(ctx, "mongo_rate", trace.WithSpanKind(trace.SpanKindClient))
 
 				// memcached miss, set up mongo connection
 				collection := s.MongoClient.Database("rate-db").Collection("inventory")
@@ -151,7 +153,7 @@ func (s *Server) GetRates(ctx context.Context, req *pb.Request) (*pb.Result, err
 					log.Error().Msgf("Failed get rate data: ", err)
 				}
 
-				span.End()
+				// span.End()
 
 				memcStr := ""
 				if err != nil {

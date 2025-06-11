@@ -96,7 +96,10 @@ func (s *Server) Shutdown() {
 // GetProfiles returns hotel profiles for requested IDs
 func (s *Server) GetProfiles(ctx context.Context, req *pb.Request) (*pb.Result, error) {
 	log.Trace().Msgf("In GetProfiles")
-
+	
+	ctx, span := s.Tracer.Start(ctx, "searchHandler")
+	defer span.End()
+	
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
 
@@ -108,9 +111,9 @@ func (s *Server) GetProfiles(ctx context.Context, req *pb.Request) (*pb.Result, 
 		profileMap[hotelId] = struct{}{}
 	}
 
-	ctx, span := s.Tracer.Start(ctx, "memcached_get_profile", trace.WithSpanKind(trace.SpanKindClient))
+	// ctx, span := s.Tracer.Start(ctx, "memcached_get_profile", trace.WithSpanKind(trace.SpanKindClient))
 	resMap, err := s.MemcClient.GetMulti(hotelIds)
-	span.End()
+	// span.End()
 
 	res := new(pb.Result)
 	hotels := make([]*pb.Hotel, 0)
@@ -135,9 +138,9 @@ func (s *Server) GetProfiles(ctx context.Context, req *pb.Request) (*pb.Result, 
 
 				collection := s.MongoClient.Database("profile-db").Collection("hotels")
 
-				_, span := s.Tracer.Start(ctx, "mongo_profile", trace.WithSpanKind(trace.SpanKindClient))
+				// _, span := s.Tracer.Start(ctx, "mongo_profile", trace.WithSpanKind(trace.SpanKindClient))
 				err := collection.FindOne(context.TODO(), bson.D{{"id", hotelId}}).Decode(&hotelProf)
-				span.End()
+				// span.End()
 
 				if err != nil {
 					log.Error().Msgf("Failed get hotels data: ", err)

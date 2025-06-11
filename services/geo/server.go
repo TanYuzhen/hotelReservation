@@ -101,6 +101,9 @@ func (s *Server) Shutdown() {
 func (s *Server) Nearby(ctx context.Context, req *pb.Request) (*pb.Result, error) {
 	log.Trace().Msgf("In geo Nearby")
 
+	ctx, span := s.Tracer.Start(ctx, "geoService")
+	defer span.End()
+
 	var (
 		points = s.getNearbyPoints(ctx, float64(req.Lat), float64(req.Lon))
 		res    = &pb.Result{}
