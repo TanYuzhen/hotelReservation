@@ -16,15 +16,16 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"hotelReservation/registry"
-	pb "hotelReservation/services/review/proto"
-	"hotelReservation/tls"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+	"hotelReservation/registry"
+	pb "hotelReservation/services/review/proto"
+	"hotelReservation/tls"
 
 	// "strings"
 
@@ -37,14 +38,14 @@ const name = "srv-review"
 type Server struct {
 	pb.UnimplementedReviewServer
 
-	Tracer      trace.Tracer
+	Tracer         trace.Tracer
 	TracerProvider trace.TracerProvider
-	Port        int
-	IpAddr      string
-	MongoClient *mongo.Client
-	Registry    *registry.Client
-	MemcClient  *memcache.Client
-	uuid        string
+	Port           int
+	IpAddr         string
+	MongoClient    *mongo.Client
+	Registry       *registry.Client
+	MemcClient     *memcache.Client
+	uuid           string
 }
 
 // Run starts the server
@@ -64,7 +65,10 @@ func (s *Server) Run() error {
 			PermitWithoutStream: true,
 		}),
 		grpc.UnaryInterceptor(
-			otelgrpc.UnaryServerInterceptor(),
+			otelgrpc.UnaryServerInterceptor(
+				otelgrpc.WithTracerProvider(s.TracerProvider),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			),
 		),
 	}
 
