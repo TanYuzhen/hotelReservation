@@ -10,10 +10,10 @@ import (
 
 	"strconv"
 
-	oteltracing "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/oteltracing"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/search"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tune"
+	oteltracing "hotelReservation/oteltracing"
+	"hotelReservation/registry"
+	"hotelReservation/services/search"
+	"hotelReservation/tune"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -46,7 +46,7 @@ func main() {
 	flag.Parse()
 
 	log.Info().Msgf("Initializing jaeger agent [service name: %v | host: %v]...", "search", *jaegerAddr)
-	tracer, err := oteltracing.Init("search", *jaegerAddr)
+	tracer, tp, err := oteltracing.Init("search", *jaegerAddr)
 	if err != nil {
 		log.Panic().Msgf("Got error while initializing jaeger agent: %v", err)
 	}
@@ -67,6 +67,7 @@ func main() {
 		ConsulAddr: *consulAddr,
 		KnativeDns: knativeDNS,
 		Registry:   registry,
+		TracerProvider: tp,
 	}
 
 	log.Info().Msg("Starting server...")

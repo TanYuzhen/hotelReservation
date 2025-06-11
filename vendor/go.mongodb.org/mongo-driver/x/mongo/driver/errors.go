@@ -8,11 +8,13 @@ package driver
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/internal/csot"
 	"go.mongodb.org/mongo-driver/mongo/description"
 	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
 )
@@ -39,7 +41,7 @@ var (
 	TransientTransactionError = "TransientTransactionError"
 	// NetworkError is an error label for network errors.
 	NetworkError = "NetworkError"
-	// RetryableWriteError is an error lable for retryable write errors.
+	// RetryableWriteError is an error label for retryable write errors.
 	RetryableWriteError = "RetryableWriteError"
 	// NoWritesPerformed is an error label indicated that no writes were performed for an operation.
 	NoWritesPerformed = "NoWritesPerformed"
@@ -51,9 +53,12 @@ var (
 	// ErrUnsupportedStorageEngine is returned when a retryable write is attempted against a server
 	// that uses a storage engine that does not support retryable writes
 	ErrUnsupportedStorageEngine = errors.New("this MongoDB deployment does not support retryable writes. Please add retryWrites=false to your connection string")
-	// ErrDeadlineWouldBeExceeded is returned when a Timeout set on an operation would be exceeded
-	// if the operation were sent to the server.
-	ErrDeadlineWouldBeExceeded = errors.New("operation not sent to server, as Timeout would be exceeded")
+	// ErrDeadlineWouldBeExceeded is returned when a Timeout set on an operation
+	// would be exceeded if the operation were sent to the server. It wraps
+	// context.DeadlineExceeded.
+	ErrDeadlineWouldBeExceeded = fmt.Errorf(
+		"operation not sent to server, as Timeout would be exceeded: %w",
+		context.DeadlineExceeded)
 	// ErrNegativeMaxTime is returned when MaxTime on an operation is a negative value.
 	ErrNegativeMaxTime = errors.New("a negative value was provided for MaxTime on an operation")
 )
@@ -135,7 +140,7 @@ func (wce WriteCommandError) Retryable(wireVersion *description.VersionRange) bo
 	if wce.WriteConcernError == nil {
 		return false
 	}
-	return (*wce.WriteConcernError).Retryable()
+	return wce.WriteConcernError.Retryable()
 }
 
 // HasErrorLabel returns true if the error contains the specified label.
@@ -260,10 +265,15 @@ func (e Error) UnsupportedStorageEngine() bool {
 
 // Error implements the error interface.
 func (e Error) Error() string {
+	var msg string
 	if e.Name != "" {
-		return fmt.Sprintf("(%v) %v", e.Name, e.Message)
+		msg = fmt.Sprintf("(%v)", e.Name)
 	}
-	return e.Message
+	msg += " " + e.Message
+	if e.Wrapped != nil {
+		msg += ": " + e.Wrapped.Error()
+	}
+	return msg
 }
 
 // Unwrap returns the underlying error.
@@ -368,7 +378,7 @@ func (e Error) NamespaceNotFound() bool {
 
 // ExtractErrorFromServerResponse extracts an error from a server response bsoncore.Document
 // if there is one. Also used in testing for SDAM.
-func ExtractErrorFromServerResponse(doc bsoncore.Document) error {
+func ExtractErrorFromServerResponse(ctx context.Context, doc bsoncore.Document) error {
 	var errmsg, codeName string
 	var code int32
 	var labels []string
@@ -394,6 +404,10 @@ func ExtractErrorFromServerResponse(doc bsoncore.Document) error {
 				}
 			case bson.TypeDouble:
 				if elem.Value().Double() == 1 {
+					ok = true
+				}
+			case bson.TypeBoolean:
+				if elem.Value().Boolean() {
 					ok = true
 				}
 			}
@@ -501,7 +515,7 @@ func ExtractErrorFromServerResponse(doc bsoncore.Document) error {
 			errmsg = "command failed"
 		}
 
-		return Error{
+		err := Error{
 			Code:            code,
 			Message:         errmsg,
 			Name:            codeName,
@@ -509,6 +523,20 @@ func ExtractErrorFromServerResponse(doc bsoncore.Document) error {
 			TopologyVersion: tv,
 			Raw:             doc,
 		}
+
+		// If CSOT is enabled and we get a MaxTimeMSExpired error, assume that
+		// the error was caused by setting "maxTimeMS" on the command based on
+		// the context deadline or on "timeoutMS". In that case, make the error
+		// wrap context.DeadlineExceeded so that users can always check
+		//
+		//  errors.Is(err, context.DeadlineExceeded)
+		//
+		// for either client-side or server-side timeouts.
+		if csot.IsTimeoutContext(ctx) && err.Code == 50 {
+			err.Wrapped = context.DeadlineExceeded
+		}
+
+		return err
 	}
 
 	if len(wcError.WriteErrors) > 0 || wcError.WriteConcernError != nil {

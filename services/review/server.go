@@ -16,9 +16,9 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
-	pb "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/review/proto"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tls"
+	"hotelReservation/registry"
+	pb "hotelReservation/services/review/proto"
+	"hotelReservation/tls"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/trace"
@@ -38,6 +38,7 @@ type Server struct {
 	pb.UnimplementedReviewServer
 
 	Tracer      trace.Tracer
+	TracerProvider trace.TracerProvider
 	Port        int
 	IpAddr      string
 	MongoClient *mongo.Client
@@ -122,7 +123,7 @@ func (s *Server) GetReviews(ctx context.Context, req *pb.Request) (*pb.Result, e
 		log.Panic().Msgf("Tried to get hotelId [%v], but got memmcached error = %s", hotelId, err)
 	} else {
 		if err == memcache.ErrCacheMiss {
-			ctx, span := s.Tracer.Start(ctx, "mongo_review", trace.WithSpanKind(trace.SpanKindClient))
+			_, span := s.Tracer.Start(ctx, "mongo_review", trace.WithSpanKind(trace.SpanKindClient))
 
 			defer span.End()
 			//session := s.MongoSession.Copy()

@@ -5,12 +5,12 @@ import (
 	"net"
 	"time"
 
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/dialer"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
-	geo "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/geo/proto"
-	rate "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/rate/proto"
-	pb "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/search/proto"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tls"
+	"hotelReservation/dialer"
+	"hotelReservation/registry"
+	geo "hotelReservation/services/geo/proto"
+	rate "hotelReservation/services/rate/proto"
+	pb "hotelReservation/services/search/proto"
+	"hotelReservation/tls"
 	"github.com/google/uuid"
 	_ "github.com/mbobakov/grpc-consul-resolver"
 	"github.com/rs/zerolog/log"
@@ -32,6 +32,7 @@ type Server struct {
 	uuid       string
 
 	Tracer     trace.Tracer
+	TracerProvider trace.TracerProvider
 	Port       int
 	IpAddr     string
 	ConsulAddr string
@@ -115,11 +116,11 @@ func (s *Server) getGprcConn(name string) (*grpc.ClientConn, error) {
 	if s.KnativeDns != "" {
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s.%s", s.ConsulAddr, name, s.KnativeDns),
-			dialer.WithTracer(s.Tracer))
+			s.TracerProvider)
 	} else {
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s", s.ConsulAddr, name),
-			dialer.WithTracer(s.Tracer),
+			s.TracerProvider,
 			dialer.WithBalancer(s.Registry.Client),
 		)
 	}

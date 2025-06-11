@@ -15,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/internal/bsonutil"
 	"go.mongodb.org/mongo-driver/internal/handshake"
+	"go.mongodb.org/mongo-driver/internal/ptrutil"
 	"go.mongodb.org/mongo-driver/mongo/address"
 	"go.mongodb.org/mongo-driver/tag"
 )
@@ -32,35 +33,37 @@ type SelectedServer struct {
 type Server struct {
 	Addr address.Address
 
-	Arbiters              []string
-	AverageRTT            time.Duration
-	AverageRTTSet         bool
-	Compression           []string // compression methods returned by server
-	CanonicalAddr         address.Address
-	ElectionID            primitive.ObjectID
-	HeartbeatInterval     time.Duration
-	HelloOK               bool
-	Hosts                 []string
-	IsCryptd              bool
-	LastError             error
-	LastUpdateTime        time.Time
-	LastWriteTime         time.Time
-	MaxBatchCount         uint32
-	MaxDocumentSize       uint32
-	MaxMessageSize        uint32
-	Members               []address.Address
-	Passives              []string
-	Passive               bool
-	Primary               address.Address
-	ReadOnly              bool
-	ServiceID             *primitive.ObjectID // Only set for servers that are deployed behind a load balancer.
-	SessionTimeoutMinutes uint32
-	SetName               string
-	SetVersion            uint32
-	Tags                  tag.Set
-	TopologyVersion       *TopologyVersion
-	Kind                  ServerKind
-	WireVersion           *VersionRange
+	Arbiters          []string
+	AverageRTT        time.Duration
+	AverageRTTSet     bool
+	Compression       []string // compression methods returned by server
+	CanonicalAddr     address.Address
+	ElectionID        primitive.ObjectID
+	HeartbeatInterval time.Duration
+	HelloOK           bool
+	Hosts             []string
+	IsCryptd          bool
+	LastError         error
+	LastUpdateTime    time.Time
+	LastWriteTime     time.Time
+	MaxBatchCount     uint32
+	MaxDocumentSize   uint32
+	MaxMessageSize    uint32
+	Members           []address.Address
+	Passives          []string
+	Passive           bool
+	Primary           address.Address
+	ReadOnly          bool
+	ServiceID         *primitive.ObjectID // Only set for servers that are deployed behind a load balancer.
+	// Deprecated: Use SessionTimeoutMinutesPtr instead.
+	SessionTimeoutMinutes    uint32
+	SessionTimeoutMinutesPtr *int64
+	SetName                  string
+	SetVersion               uint32
+	Tags                     tag.Set
+	TopologyVersion          *TopologyVersion
+	Kind                     ServerKind
+	WireVersion              *VersionRange
 }
 
 // NewServer creates a new server description from the given hello command response.
@@ -167,7 +170,9 @@ func NewServer(addr address.Address, response bson.Raw) Server {
 				desc.LastError = fmt.Errorf("expected 'logicalSessionTimeoutMinutes' to be an integer but it's a BSON %s", element.Value().Type)
 				return desc
 			}
+
 			desc.SessionTimeoutMinutes = uint32(i64)
+			desc.SessionTimeoutMinutesPtr = &i64
 		case "maxBsonObjectSize":
 			i64, ok := element.Value().AsInt64OK()
 			if !ok {
@@ -311,21 +316,23 @@ func NewServer(addr address.Address, response bson.Raw) Server {
 
 	desc.Kind = Standalone
 
-	if isReplicaSet {
+	switch {
+	case isReplicaSet:
 		desc.Kind = RSGhost
-	} else if desc.SetName != "" {
-		if isWritablePrimary {
+	case desc.SetName != "":
+		switch {
+		case isWritablePrimary:
 			desc.Kind = RSPrimary
-		} else if hidden {
+		case hidden:
 			desc.Kind = RSMember
-		} else if secondary {
+		case secondary:
 			desc.Kind = RSSecondary
-		} else if arbiterOnly {
+		case arbiterOnly:
 			desc.Kind = RSArbiter
-		} else {
+		default:
 			desc.Kind = RSMember
 		}
-	} else if msg == "isdbgrid" {
+	case msg == "isdbgrid":
 		desc.Kind = Mongos
 	}
 
@@ -463,7 +470,7 @@ func (s Server) Equal(other Server) bool {
 		return false
 	}
 
-	if s.SessionTimeoutMinutes != other.SessionTimeoutMinutes {
+	if ptrutil.CompareInt64(s.SessionTimeoutMinutesPtr, other.SessionTimeoutMinutesPtr) != 0 {
 		return false
 	}
 

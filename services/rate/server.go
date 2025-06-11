@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
-	pb "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/rate/proto"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tls"
+	"hotelReservation/registry"
+	pb "hotelReservation/services/rate/proto"
+	"hotelReservation/tls"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson"
@@ -33,6 +33,7 @@ type Server struct {
 	uuid string
 
 	Tracer      trace.Tracer
+	TracerProvider trace.TracerProvider
 	Port        int
 	IpAddr      string
 	MongoClient *mongo.Client
@@ -103,7 +104,7 @@ func (s *Server) GetRates(ctx context.Context, req *pb.Request) (*pb.Result, err
 	// first check memcached(get-multi)
 	ctx, span := s.Tracer.Start(ctx, "memcached_get_multi_rate", trace.WithSpanKind(trace.SpanKindClient))
 	resMap, err := s.MemcClient.GetMulti(hotelIds)
-	span.End()()
+	span.End()
 
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
@@ -131,7 +132,7 @@ func (s *Server) GetRates(ctx context.Context, req *pb.Request) (*pb.Result, err
 				log.Trace().Msgf("memc miss, hotelId = %s", id)
 				log.Trace().Msg("memcached miss, set up mongo connection")
 
-				ctx, span := s.Tracer.Start(ctx, "mongo_rate", trace.WithSpanKind(trace.SpanKindClient))
+				_, span := s.Tracer.Start(ctx, "mongo_rate", trace.WithSpanKind(trace.SpanKindClient))
 
 				// memcached miss, set up mongo connection
 				collection := s.MongoClient.Database("rate-db").Collection("inventory")

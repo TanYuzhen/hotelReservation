@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
-	pb "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/reservation/proto"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tls"
+	"hotelReservation/registry"
+	pb "hotelReservation/services/reservation/proto"
+	"hotelReservation/tls"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson"
@@ -32,6 +32,7 @@ type Server struct {
 	uuid string
 
 	Tracer      trace.Tracer
+	TracerProvider trace.TracerProvider
 	Port        int
 	IpAddr      string
 	MongoClient *mongo.Client
@@ -260,7 +261,7 @@ func (s *Server) CheckAvailability(ctx context.Context, req *pb.Request) (*pb.Re
 			queryMissKeys = append(queryMissKeys, strings.Split(k, "_")[0])
 		}
 		var nums []number
-		ctx, span := s.Tracer.Start(ctx, "mongodb_capacity_get_multi_number", trace.WithSpanKind(trace.SpanKindClient))
+		_, span := s.Tracer.Start(ctx, "mongodb_capacity_get_multi_number", trace.WithSpanKind(trace.SpanKindClient))
 		curr, err := numCollection.Find(context.TODO(), bson.D{{"$in", queryMissKeys}})
 		if err != nil {
 			log.Error().Msgf("Failed get reservation number data: ", err)
@@ -308,7 +309,7 @@ func (s *Server) CheckAvailability(ctx context.Context, req *pb.Request) (*pb.Re
 		hotelId  string
 		checkRes bool
 	}
-	ctx, span := s.Tracer.Start(ctx, "memcached_reserve_get_multi_number", trace.WithSpanKind(trace.SpanKindClient))
+	ctx, span = s.Tracer.Start(ctx, "memcached_reserve_get_multi_number", trace.WithSpanKind(trace.SpanKindClient))
 	ch := make(chan taskRes)
 	// check capacity in memcached and mongodb
 	defer span.End()
@@ -356,7 +357,7 @@ func (s *Server) CheckAvailability(ctx context.Context, req *pb.Request) (*pb.Re
 					resCollection := s.MongoClient.Database("reservation-db").Collection("reservation")
 					filter := bson.D{{"hotelId", queryItem["hotelId"]}, {"inDate", queryItem["startDate"]}, {"outDate", queryItem["endDate"]}}
 
-					ctx, span := s.Tracer.Start(ctx, "mongodb_capacity_get_multi_number"+comm, trace.WithSpanKind(trace.SpanKindClient))
+					_, span := s.Tracer.Start(ctx, "mongodb_capacity_get_multi_number"+comm, trace.WithSpanKind(trace.SpanKindClient))
 					curr, err := resCollection.Find(context.TODO(), filter)
 					if err != nil {
 						log.Error().Msgf("Failed get reservation data: ", err)

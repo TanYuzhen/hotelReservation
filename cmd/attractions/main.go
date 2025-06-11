@@ -8,10 +8,10 @@ import (
 	"os"
 	"strconv"
 
-	oteltracing "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/oteltracing"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/attractions"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tune"
+	oteltracing "hotelReservation/oteltracing"
+	"hotelReservation/registry"
+	"hotelReservation/services/attractions"
+	"hotelReservation/tune"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -65,7 +65,7 @@ func main() {
 	flag.Parse()
 
 	log.Info().Msgf("Initializing jaeger agent [service name: %v | host: %v]...", "attractions", *jaegeraddr)
-	tracer, err := oteltracing.Init("attractions", *jaegeraddr)
+	tracer, _, err := oteltracing.Init("attractions", *jaegeraddr)
 	if err != nil {
 		log.Panic().Msgf("Got error while initializing jaeger agent: %v", err)
 	}

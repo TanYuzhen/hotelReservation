@@ -15,7 +15,7 @@ import (
 )
 
 // Init initializes OpenTelemetry tracing with a Jaeger exporter.
-func Init(serviceName, jaegerAddr string) (trace.Tracer, error) {
+func Init(serviceName, jaegerAddr string) (trace.Tracer, trace.TracerProvider, error) {
 	host, port, err := net.SplitHostPort(jaegerAddr)
 	if err != nil {
 		host = jaegerAddr
@@ -27,7 +27,7 @@ func Init(serviceName, jaegerAddr string) (trace.Tracer, error) {
 		jaeger.WithAgentPort(port),
 	))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	tp := sdktrace.NewTracerProvider(
@@ -40,7 +40,7 @@ func Init(serviceName, jaegerAddr string) (trace.Tracer, error) {
 
 	otel.SetTracerProvider(tp)
 
-	return tp.Tracer(serviceName), nil
+	return tp.Tracer(serviceName), tp , nil
 }
 
 // Shutdown flushes and closes the tracer provider.

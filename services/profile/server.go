@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
-	pb "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/profile/proto"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tls"
+	"hotelReservation/registry"
+	pb "hotelReservation/services/profile/proto"
+	"hotelReservation/tls"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson"
@@ -31,6 +31,7 @@ type Server struct {
 	uuid string
 
 	Tracer      trace.Tracer
+	TracerProvider trace.TracerProvider
 	Port        int
 	IpAddr      string
 	MongoClient *mongo.Client
@@ -130,7 +131,7 @@ func (s *Server) GetProfiles(ctx context.Context, req *pb.Request) (*pb.Result, 
 
 				collection := s.MongoClient.Database("profile-db").Collection("hotels")
 
-				ctx, span := s.Tracer.Start(ctx, "mongo_profile", trace.WithSpanKind(trace.SpanKindClient))
+				_, span := s.Tracer.Start(ctx, "mongo_profile", trace.WithSpanKind(trace.SpanKindClient))
 				err := collection.FindOne(context.TODO(), bson.D{{"id", hotelId}}).Decode(&hotelProf)
 				span.End()
 

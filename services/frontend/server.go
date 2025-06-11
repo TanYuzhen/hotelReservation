@@ -8,22 +8,22 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/dialer"
-	oteltracing "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/oteltracing"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
-	attractions "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/attractions/proto"
-	profile "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/profile/proto"
-	recommendation "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/recommendation/proto"
-	reservation "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/reservation/proto"
-	review "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/review/proto"
-	search "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/search/proto"
-	user "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/user/proto"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tls"
+	"hotelReservation/dialer"
+	oteltracing "hotelReservation/oteltracing"
+	"hotelReservation/registry"
+	attractions "hotelReservation/services/attractions/proto"
+	profile "hotelReservation/services/profile/proto"
+	recommendation "hotelReservation/services/recommendation/proto"
+	reservation "hotelReservation/services/reservation/proto"
+	review "hotelReservation/services/review/proto"
+	search "hotelReservation/services/search/proto"
+	user "hotelReservation/services/user/proto"
+	"hotelReservation/tls"
 	_ "github.com/mbobakov/grpc-consul-resolver"
 	"github.com/rs/zerolog/log"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var (
@@ -47,6 +47,7 @@ type Server struct {
 	Port       int
 	Tracer     trace.Tracer
 	Registry   *registry.Client
+	TracerProvider trace.TracerProvider	
 }
 
 // Run the server
@@ -94,6 +95,7 @@ func (s *Server) Run() error {
 
 	log.Trace().Msg("frontend before mux")
 	mux := oteltracing.NewServeMux()
+	handler := otelhttp.NewHandler(mux, "frontend")
 	mux.Handle("/", http.FileServer(http.FS(staticContent)))
 	mux.Handle("/hotels", http.HandlerFunc(s.searchHandler))
 	mux.Handle("/recommendations", http.HandlerFunc(s.recommendHandler))
@@ -109,7 +111,7 @@ func (s *Server) Run() error {
 	tlsconfig := tls.GetHttpsOpt()
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.Port),
-		Handler: mux,
+		Handler: handler,
 	}
 	if tlsconfig != nil {
 		log.Info().Msg("Serving https")
@@ -133,7 +135,7 @@ func (s *Server) initSearchClient(name string) error {
 func (s *Server) initReviewClient(name string) error {
 	conn, err := dialer.Dial(
 		name,
-		dialer.WithTracer(s.Tracer),
+		s.TracerProvider,
 		dialer.WithBalancer(s.Registry.Client),
 	)
 	if err != nil {
@@ -146,7 +148,7 @@ func (s *Server) initReviewClient(name string) error {
 func (s *Server) initAttractionsClient(name string) error {
 	conn, err := dialer.Dial(
 		name,
-		dialer.WithTracer(s.Tracer),
+		s.TracerProvider,
 		dialer.WithBalancer(s.Registry.Client),
 	)
 	if err != nil {
@@ -200,11 +202,11 @@ func (s *Server) getGprcConn(name string) (*grpc.ClientConn, error) {
 	if s.KnativeDns != "" {
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s.%s", s.ConsulAddr, name, s.KnativeDns),
-			dialer.WithTracer(s.Tracer))
+			s.TracerProvider)
 	} else {
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s", s.ConsulAddr, name),
-			dialer.WithTracer(s.Tracer),
+			s.TracerProvider,
 			dialer.WithBalancer(s.Registry.Client),
 		)
 	}
@@ -215,6 +217,10 @@ func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	log.Trace().Msg("starts searchHandler")
+
+	// 修复：正确创建span并使用返回的context
+	ctx, span := s.Tracer.Start(ctx, "searchHandler")
+	defer span.End()
 
 	// in/out dates from query params
 	inDate, outDate := r.URL.Query().Get("inDate"), r.URL.Query().Get("outDate")
@@ -297,6 +303,10 @@ func (s *Server) recommendHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
 
+	// 修复：正确创建span并使用返回的context
+	ctx, span := s.Tracer.Start(ctx, "recommendHandler")
+	defer span.End()
+
 	sLat, sLon := r.URL.Query().Get("lat"), r.URL.Query().Get("lon")
 	if sLat == "" || sLon == "" {
 		http.Error(w, "Please specify location params", http.StatusBadRequest)
@@ -346,6 +356,10 @@ func (s *Server) recommendHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reviewHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
+
+	// 修复：正确创建span并使用返回的context，并修正span名称
+	ctx, span := s.Tracer.Start(ctx, "reviewHandler")
+	defer span.End()
 
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
@@ -399,6 +413,10 @@ func (s *Server) restaurantHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
 
+	// 修复：正确创建span并使用返回的context
+	ctx, span := s.Tracer.Start(ctx, "restaurantHandler")
+	defer span.End()
+
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
 		http.Error(w, "Please specify username and password", http.StatusBadRequest)
@@ -450,6 +468,10 @@ func (s *Server) restaurantHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) museumHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
+
+	// 修复：正确创建span并使用返回的context
+	ctx, span := s.Tracer.Start(ctx, "museumHandler")
+	defer span.End()
 
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
@@ -503,6 +525,10 @@ func (s *Server) cinemaHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
 
+	// 修复：正确创建span并使用返回的context
+	ctx, span := s.Tracer.Start(ctx, "cinemaHandler")
+	defer span.End()
+
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
 		http.Error(w, "Please specify username and password", http.StatusBadRequest)
@@ -555,6 +581,10 @@ func (s *Server) userHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
 
+	// 修复：正确创建span并使用返回的context
+	ctx, span := s.Tracer.Start(ctx, "userHandler")
+	defer span.End()
+
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
 		http.Error(w, "Please specify username and password", http.StatusBadRequest)
@@ -586,6 +616,10 @@ func (s *Server) userHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reservationHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
+	
+	// 修复：正确创建span并使用返回的context
+	ctx, span := s.Tracer.Start(ctx, "reservationHandler")
+	defer span.End()
 
 	inDate, outDate := r.URL.Query().Get("inDate"), r.URL.Query().Get("outDate")
 	if inDate == "" || outDate == "" {

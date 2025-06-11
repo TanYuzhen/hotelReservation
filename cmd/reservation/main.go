@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"time"
 
-	oteltracing "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/oteltracing"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/reservation"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tune"
+	oteltracing "hotelReservation/oteltracing"
+	"hotelReservation/registry"
+	"hotelReservation/services/reservation"
+	"hotelReservation/tune"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -53,7 +53,7 @@ func main() {
 	flag.Parse()
 
 	log.Info().Msgf("Initializing jaeger agent [service name: %v | host: %v]...", "reservation", *jaegerAddr)
-	tracer, err := oteltracing.Init("reservation", *jaegerAddr)
+	tracer, tp, err := oteltracing.Init("reservation", *jaegerAddr)
 	if err != nil {
 		log.Panic().Msgf("Got error while initializing jaeger agent: %v", err)
 	}
@@ -74,6 +74,7 @@ func main() {
 		IpAddr:      servIP,
 		MongoClient: mongoClient,
 		MemcClient:  memcClient,
+		TracerProvider: tp,
 	}
 
 	log.Info().Msg("Starting server...")

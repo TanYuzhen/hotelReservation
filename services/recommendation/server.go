@@ -7,9 +7,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/registry"
-	pb "github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/services/recommendation/proto"
-	"github.com/delimitrou/DeathStarBench/tree/master/hotelReservation/tls"
+	"hotelReservation/registry"
+	pb "hotelReservation/services/recommendation/proto"
+	"hotelReservation/tls"
 	"github.com/google/uuid"
 	"github.com/hailocab/go-geoindex"
 	"github.com/rs/zerolog/log"
@@ -31,6 +31,7 @@ type Server struct {
 	uuid   string
 
 	Tracer      trace.Tracer
+	TracerProvider trace.TracerProvider
 	Port        int
 	IpAddr      string
 	MongoClient *mongo.Client
