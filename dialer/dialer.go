@@ -70,6 +70,17 @@ func Dial(name string, ctx context.Context, opts ...DialOption) (*grpc.ClientCon
 
 	dialopts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+
+	for _, fn := range opts {
+		opt, err := fn(name)
+		if err != nil {
+			return nil, fmt.Errorf("config error: %v", err)
+		}
+		dialopts = append(dialopts, opt)
+	}
+
+	dialopts = append(dialopts,
 		grpc.WithUnaryInterceptor(
 			otelgrpc.UnaryClientInterceptor(
 				otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
@@ -80,15 +91,7 @@ func Dial(name string, ctx context.Context, opts ...DialOption) (*grpc.ClientCon
 				otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			)),
-	}
-
-	for _, fn := range opts {
-		opt, err := fn(name)
-		if err != nil {
-			return nil, fmt.Errorf("config error: %v", err)
-		}
-		dialopts = append(dialopts, opt)
-	}
+	)
 
 	conn, err := grpc.DialContext(ctx, name, dialopts...)
 	if err != nil {
