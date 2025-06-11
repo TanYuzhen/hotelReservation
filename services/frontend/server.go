@@ -11,6 +11,10 @@ import (
 
 	"hotelReservation/dialer"
 	// oteltracing "hotelReservation/oteltracing"
+	_ "github.com/mbobakov/grpc-consul-resolver"
+	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
 	"hotelReservation/registry"
 	attractions "hotelReservation/services/attractions/proto"
 	profile "hotelReservation/services/profile/proto"
@@ -20,12 +24,8 @@ import (
 	search "hotelReservation/services/search/proto"
 	user "hotelReservation/services/user/proto"
 	"hotelReservation/tls"
-	_ "github.com/mbobakov/grpc-consul-resolver"
-	"github.com/rs/zerolog/log"
-	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc"
-    // "github.com/gorilla/mux"
-    // "go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
+	// "github.com/gorilla/mux"
+	// "go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -44,13 +44,13 @@ type Server struct {
 	attractionsClient    attractions.AttractionsClient
 	reservationClient    reservation.ReservationClient
 
-	KnativeDns string
-	IpAddr     string
-	ConsulAddr string
-	Port       int
-	Tracer     trace.Tracer
-	Registry   *registry.Client
-	TracerProvider trace.TracerProvider	
+	KnativeDns     string
+	IpAddr         string
+	ConsulAddr     string
+	Port           int
+	Tracer         trace.Tracer
+	Registry       *registry.Client
+	TracerProvider trace.TracerProvider
 }
 
 // Run the server
@@ -71,15 +71,15 @@ func (s *Server) Run() error {
 		return err
 	}
 
-	if err := s.initProfileClient(ctx,"srv-profile"); err != nil {
+	if err := s.initProfileClient(ctx, "srv-profile"); err != nil {
 		return err
 	}
 
-	if err := s.initRecommendationClient(ctx,"srv-recommendation"); err != nil {
+	if err := s.initRecommendationClient(ctx, "srv-recommendation"); err != nil {
 		return err
 	}
 
-	if err := s.initUserClient(ctx,"srv-user"); err != nil {
+	if err := s.initUserClient(ctx, "srv-user"); err != nil {
 		return err
 	}
 
@@ -128,7 +128,7 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) initSearchClient(ctx context.Context, name string) error {
-	conn, err := s.getGprcConn(ctx,name)
+	conn, err := s.getGprcConn(ctx, name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -137,7 +137,7 @@ func (s *Server) initSearchClient(ctx context.Context, name string) error {
 }
 
 func (s *Server) initReviewClient(ctx context.Context, name string) error {
-	conn, err := s.getGprcConn(ctx,name)
+	conn, err := s.getGprcConn(ctx, name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -146,7 +146,7 @@ func (s *Server) initReviewClient(ctx context.Context, name string) error {
 }
 
 func (s *Server) initAttractionsClient(ctx context.Context, name string) error {
-	conn, err := s.getGprcConn(ctx,name)
+	conn, err := s.getGprcConn(ctx, name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -155,7 +155,7 @@ func (s *Server) initAttractionsClient(ctx context.Context, name string) error {
 }
 
 func (s *Server) initProfileClient(ctx context.Context, name string) error {
-	conn, err := s.getGprcConn(ctx,name)
+	conn, err := s.getGprcConn(ctx, name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -164,7 +164,7 @@ func (s *Server) initProfileClient(ctx context.Context, name string) error {
 }
 
 func (s *Server) initRecommendationClient(ctx context.Context, name string) error {
-	conn, err := s.getGprcConn(ctx,name)
+	conn, err := s.getGprcConn(ctx, name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -173,7 +173,7 @@ func (s *Server) initRecommendationClient(ctx context.Context, name string) erro
 }
 
 func (s *Server) initUserClient(ctx context.Context, name string) error {
-	conn, err := s.getGprcConn(ctx,name)
+	conn, err := s.getGprcConn(ctx, name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -182,7 +182,7 @@ func (s *Server) initUserClient(ctx context.Context, name string) error {
 }
 
 func (s *Server) initReservation(ctx context.Context, name string) error {
-	conn, err := s.getGprcConn(ctx,name)
+	conn, err := s.getGprcConn(ctx, name)
 	if err != nil {
 		return fmt.Errorf("dialer error: %v", err)
 	}
@@ -199,12 +199,12 @@ func (s *Server) getGprcConn(ctx context.Context, name string) (*grpc.ClientConn
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s.%s", s.ConsulAddr, name, s.KnativeDns),
 			ctx,
-			dialer.WithTracer(s.Tracer))
+			dialer.WithTracerProvider(s.TracerProvider))
 	} else {
 		return dialer.Dial(
 			fmt.Sprintf("consul://%s/%s", s.ConsulAddr, name),
 			ctx,
-			dialer.WithTracer(s.Tracer),
+			dialer.WithTracerProvider(s.TracerProvider),
 			dialer.WithBalancer(s.Registry.Client),
 		)
 	}
