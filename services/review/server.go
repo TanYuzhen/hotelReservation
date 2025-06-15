@@ -58,14 +58,16 @@ func (s *Server) Run() error {
 	s.uuid = uuid.New().String()
 
 	opts := []grpc.ServerOption{
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Timeout: 120 * time.Second,
-		}),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			PermitWithoutStream: true,
-		}),
-		grpc.UnaryInterceptor(
+		grpc.KeepaliveParams(keepalive.ServerParameters{ Timeout: 120 * time.Second }),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{ PermitWithoutStream: true }),
+		grpc.ChainUnaryInterceptor(
 			otelgrpc.UnaryServerInterceptor(
+				otelgrpc.WithTracerProvider(s.TracerProvider),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			),
+		),
+		grpc.ChainStreamInterceptor(
+			otelgrpc.StreamServerInterceptor(
 				otelgrpc.WithTracerProvider(s.TracerProvider),
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			),
@@ -75,9 +77,26 @@ func (s *Server) Run() error {
 	if tlsopt := tls.GetServerOpt(); tlsopt != nil {
 		opts = append(opts, tlsopt)
 	}
+	
+	srv := grpc.NewServer(opts...)  
 
-	srv := grpc.NewServer(opts...)
 
+	// srv := grpc.NewServer(
+	// 	grpc.ChainUnaryInterceptor(
+	// 		otelgrpc.UnaryServerInterceptor(
+	// 			otelgrpc.WithTracerProvider(s.TracerProvider),
+	// 			otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+	// 		),
+	// 	),
+
+	// 	grpc.ChainStreamInterceptor(
+	// 		otelgrpc.StreamServerInterceptor(
+	// 			otelgrpc.WithTracerProvider(s.TracerProvider),
+	// 			otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+	// 		),
+	// 	),
+	// )
+	
 	pb.RegisterReviewServer(srv, s)
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.Port))

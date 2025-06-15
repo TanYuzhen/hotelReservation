@@ -2,8 +2,8 @@ package dialer
 
 import (
 	"context"
-	"fmt"
-	"time"
+	// "fmt"
+	// "time"
 
 	// "hotelReservation/tls"
 	consul "github.com/hashicorp/consul/api"
@@ -19,15 +19,15 @@ import (
 type DialOption func(name string) (grpc.DialOption, error)
 
 // WithTracerProvider configures tracing for grpc clients.
-func WithTracerProvider(tp trace.TracerProvider) DialOption {
-	return func(name string) (grpc.DialOption, error) {
-		return grpc.WithUnaryInterceptor(
-			otelgrpc.UnaryClientInterceptor(
-				otelgrpc.WithTracerProvider(tp),
-				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
-			)), nil
-	}
-}
+// func WithTracerProvider(tp trace.TracerProvider) DialOption {
+// 	return func(name string) (grpc.DialOption, error) {
+// 		return grpc.WithUnaryInterceptor(
+// 			otelgrpc.UnaryClientInterceptor(
+// 				otelgrpc.WithTracerProvider(s.TracerProvider),
+// 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+// 			)), nil
+// 	}
+// }
 
 // WithBalancer enables client side load balancing
 func WithBalancer(registry *consul.Client) DialOption {
@@ -37,62 +37,29 @@ func WithBalancer(registry *consul.Client) DialOption {
 }
 
 // Dial returns a load balanced grpc client conn with tracing interceptor
-func Dial(name string, ctx context.Context, opts ...DialOption) (*grpc.ClientConn, error) {
-
-	// dialopts := []grpc.DialOption{
-	// 	grpc.WithKeepaliveParams(keepalive.ClientParameters{
-	// 		Timeout:             120 * time.Second,
-	// 		PermitWithoutStream: true,
-	// 	}),
-	// }
-	// if tlsopt := tls.GetDialOpt(); tlsopt != nil {
-	// 	dialopts = append(dialopts, tlsopt)
-	// } else {
-	// 	dialopts = append(dialopts, grpc.WithInsecure())
-	// }
-
-	// for _, fn := range opts {
-	// 	opt, err := fn(name)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("config error: %v", err)
-	// 	}
-	// 	dialopts = append(dialopts, opt)
-	// }
-
-	// conn, err := grpc.Dial(name, dialopts...)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to dial %s: %v", name, err)
-	// }
-
-	// return conn, nil
-	ctx, cancel := context.WithTimeout(ctx, time.Second*3)
-	defer cancel()
-
-	dialopts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(
-			otelgrpc.UnaryClientInterceptor(
-				otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
-				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
-			)),
-		grpc.WithStreamInterceptor(
-			otelgrpc.StreamClientInterceptor(
-				otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
-				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
-			)),
-	}
-
-	for _, fn := range opts {
-		opt, err := fn(name)
-		if err != nil {
-			return nil, fmt.Errorf("config error: %v", err)
-		}
-		dialopts = append(dialopts, opt)
-	}
-
-	conn, err := grpc.DialContext(ctx, name, dialopts...)
-	if err != nil {
-		return nil, fmt.Errorf("config error: %v", err)
-	}
-	return conn, nil
+func Dial(name string, ctx context.Context, tp trace.TracerProvider, opts ...DialOption) (*grpc.ClientConn, error) {
+	dials := []grpc.DialOption{
+        grpc.WithTransportCredentials(insecure.NewCredentials()),
+        grpc.WithChainUnaryInterceptor(
+            otelgrpc.UnaryClientInterceptor(
+                otelgrpc.WithTracerProvider(tp),
+                otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+            ),
+        ),
+        grpc.WithChainStreamInterceptor(
+            otelgrpc.StreamClientInterceptor(
+                otelgrpc.WithTracerProvider(tp),
+                otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+            ),
+        ),
+    }
+    // 把可变参数拼进来
+    for _, c := range opts {
+        if opt, err := c(name); err != nil {
+            return nil, err
+        } else {
+            dials = append(dials, opt)
+        }
+    }
+    return grpc.DialContext(ctx, name, dials...)
 }

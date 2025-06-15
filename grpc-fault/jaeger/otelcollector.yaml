@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otelcollector
+  labels:
+    app: otelcollector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otelcollector
+  template:
+    metadata:
+      labels:
+        app: otelcollector
+      # 如果在 Istio 环境下，建议禁用 sidecar 注入，确保 Collector 能识别真实 Pod IP
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      serviceAccountName: otelcollector
+      terminationGracePeriodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: otel-collector-config
+      containers:
+      - name: otelcollector
+        image: otel/opentelemetry-collector-contrib:0.82.0
+        args:
+        - "--config=/conf/otel-collector-config.yaml"
+        volumeMounts:
+        - name: config
+          mountPath: /conf
+          readOnly: true
+        ports:
+        - containerPort: 4317   # OTLP gRPC
+        - containerPort: 4318   # OTLP HTTP
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          requests:
+            cpu: 200m
+            memory: 180Mi
+          limits:
+            cpu: 300m
+            memory: 300Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otelcollector
+spec:
+  type: ClusterIP
+  selector:
+    app: otelcollector
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+

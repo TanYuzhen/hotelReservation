@@ -22,6 +22,7 @@ global:
       JAEGER_PROPAGATION: "w3c"
       MEMC_TIMEOUT: "2"
       GC: "100"
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://otelcollector:4317"
   affinity: {}
   tolerations: []
   nodeSelector: {}

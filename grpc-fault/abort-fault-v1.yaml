@@ -1,0 +1,37 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: abort-inject-v1
+spec:
+  workloadSelector:
+    labels:
+      app: rate-hotel-hotelres                     # 只应用于 currencyservice 的 Envoy sidecar
+      version: v1
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND               # 上游服务 inbound 流量方向注入故障
+      listener:
+        portNumber: 8084                    # geo 服务的端口
+        filterChain:
+          filter:
+            name: "envoy.filters.network.http_connection_manager"
+            subFilter:
+              name: "envoy.filters.http.router"
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.fault
+        typed_config:
+          "@type": "type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault"
+          abort:
+            grpc_status: 14                 # 返回 gRPC 状态码 14 (UNAVAILABLE)
+            percentage:
+              numerator: 100
+              denominator: HUNDRED          # 100%的请求触发故障
+          headers:
+            - name: ":path"
+              suffix_match: "/GetRates"
+            - name: tracestate
+              exact_match: "fault=1"
+

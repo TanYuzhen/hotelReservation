@@ -50,14 +50,16 @@ func (s *Server) Run() error {
 	s.uuid = uuid.New().String()
 
 	opts := []grpc.ServerOption{
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Timeout: 120 * time.Second,
-		}),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			PermitWithoutStream: true,
-		}),
-		grpc.UnaryInterceptor(
+		grpc.KeepaliveParams(keepalive.ServerParameters{ Timeout: 120 * time.Second }),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{ PermitWithoutStream: true }),
+		grpc.ChainUnaryInterceptor(
 			otelgrpc.UnaryServerInterceptor(
+				otelgrpc.WithTracerProvider(s.TracerProvider),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			),
+		),
+		grpc.ChainStreamInterceptor(
+			otelgrpc.StreamServerInterceptor(
 				otelgrpc.WithTracerProvider(s.TracerProvider),
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			),
@@ -67,16 +69,35 @@ func (s *Server) Run() error {
 	if tlsopt := tls.GetServerOpt(); tlsopt != nil {
 		opts = append(opts, tlsopt)
 	}
+	
+	srv := grpc.NewServer(opts...)  
 
-	srv := grpc.NewServer(opts...)
+	// srv := grpc.NewServer(
+	// 	grpc.ChainUnaryInterceptor(
+	// 		otelgrpc.UnaryServerInterceptor(
+	// 			otelgrpc.WithTracerProvider(s.TracerProvider),
+	// 			otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+	// 		),
+	// 	),
+
+	// 	grpc.ChainStreamInterceptor(
+	// 		otelgrpc.StreamServerInterceptor(
+	// 			otelgrpc.WithTracerProvider(s.TracerProvider),
+	// 			otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+	// 		),
+	// 	),
+	// )
+	
 	pb.RegisterSearchServer(srv, s)
 
 	ctx := context.Background()
 	// init grpc clients
-	if err := s.initGeoClient(ctx, "srv-geo"); err != nil {
+	// if err := s.initGeoClient(ctx, "srv-geo"); err != nil {
+	if err := s.initGeoClient(ctx, "geo-hotel-hotelres:8083"); err != nil {
 		return err
 	}
-	if err := s.initRateClient(ctx, "srv-rate"); err != nil {
+	// if err := s.initRateClient(ctx, "srv-rate"); err != nil {
+	if err := s.initRateClient(ctx, "rate-hotel-hotelres:8084"); err != nil {
 		return err
 	}
 
@@ -123,31 +144,35 @@ func (s *Server) getGprcConn(ctx context.Context, name string) (*grpc.ClientConn
 	log.Info().Msg(fmt.Sprintf("%s.%s", name, s.KnativeDns))
 
 	if s.KnativeDns != "" {
-		return dialer.Dial(
-			fmt.Sprintf("consul://%s/%s.%s", s.ConsulAddr, name, s.KnativeDns),
-			ctx,
-			dialer.WithTracerProvider(s.TracerProvider))
+		// return dialer.Dial(
+		// 	fmt.Sprintf("consul://%s/%s.%s", s.ConsulAddr, name, s.KnativeDns),
+		// 	ctx,
+		// 	s.TracerProvider,
+		// )
+		return dialer.Dial(name, ctx, s.TracerProvider)
 	} else {
-		return dialer.Dial(
-			fmt.Sprintf("consul://%s/%s", s.ConsulAddr, name),
-			ctx,
-			dialer.WithTracerProvider(s.TracerProvider),
-			dialer.WithBalancer(s.Registry.Client),
-		)
+		// return dialer.Dial(
+		// 	fmt.Sprintf("consul://%s/%s", s.ConsulAddr, name),
+		// 	ctx,
+		// 	s.TracerProvider,
+		// 	dialer.WithBalancer(s.Registry.Client),
+		// )
+		return dialer.Dial(name, ctx, s.TracerProvider, dialer.WithBalancer(s.Registry.Client))
 	}
 }
 
 // Nearby returns ids of nearby hotels ordered by ranking algo
 func (s *Server) Nearby(ctx context.Context, req *pb.NearbyRequest) (*pb.SearchResult, error) {
-	// find nearby hotels
+	srv := trace.SpanContextFromContext(ctx)
+    fmt.Println("[debug] server-span=%s remote=%v", srv.SpanID(), srv.IsRemote())
+    ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+    defer cancel()
+    cliParent := trace.SpanContextFromContext(ctx)
+    fmt.Println("[debug] before RPC, parent=%s", cliParent.SpanID())	
+	
 	log.Trace().Msg("in Search Nearby")
-
 	log.Trace().Msgf("nearby lat = %f", req.Lat)
 	log.Trace().Msgf("nearby lon = %f", req.Lon)
-
-	ctx, span := s.Tracer.Start(ctx, "searchService")
-	defer span.End()
-
 	nearby, err := s.geoClient.Nearby(ctx, &geo.Request{
 		Lat: req.Lat,
 		Lon: req.Lon,

@@ -52,14 +52,16 @@ func (s *Server) Run() error {
 	s.uuid = uuid.New().String()
 
 	opts := []grpc.ServerOption{
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Timeout: 120 * time.Second,
-		}),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			PermitWithoutStream: true,
-		}),
-		grpc.UnaryInterceptor(
+		grpc.KeepaliveParams(keepalive.ServerParameters{ Timeout: 120 * time.Second }),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{ PermitWithoutStream: true }),
+		grpc.ChainUnaryInterceptor(
 			otelgrpc.UnaryServerInterceptor(
+				otelgrpc.WithTracerProvider(s.TracerProvider),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			),
+		),
+		grpc.ChainStreamInterceptor(
+			otelgrpc.StreamServerInterceptor(
 				otelgrpc.WithTracerProvider(s.TracerProvider),
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			),
@@ -69,8 +71,25 @@ func (s *Server) Run() error {
 	if tlsopt := tls.GetServerOpt(); tlsopt != nil {
 		opts = append(opts, tlsopt)
 	}
+	
+	srv := grpc.NewServer(opts...)  
 
-	srv := grpc.NewServer(opts...)
+
+	// srv := grpc.NewServer(
+	// 	grpc.ChainUnaryInterceptor(
+	// 		otelgrpc.UnaryServerInterceptor(
+	// 			otelgrpc.WithTracerProvider(s.TracerProvider),
+	// 			otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+	// 		),
+	// 	),
+
+	// 	grpc.ChainStreamInterceptor(
+	// 		otelgrpc.StreamServerInterceptor(
+	// 			otelgrpc.WithTracerProvider(s.TracerProvider),
+	// 			otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+	// 		),
+	// 	),
+	// )
 
 	pb.RegisterRateServer(srv, s)
 
@@ -96,11 +115,7 @@ func (s *Server) Shutdown() {
 // GetRates gets rates for hotels for specific date range.
 func (s *Server) GetRates(ctx context.Context, req *pb.Request) (*pb.Result, error) {
 	res := new(pb.Result)
-
 	ratePlans := make(RatePlans, 0)
-	ctx, span := s.Tracer.Start(ctx, "rateService")
-	defer span.End()
-
 	hotelIds := []string{}
 	rateMap := make(map[string]struct{})
 	for _, hotelID := range req.HotelIds {

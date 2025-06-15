@@ -6,7 +6,7 @@ ports:
  
 container:
   command: /go/bin/recommendation
-  image: deathstarbench/hotel-reservation
+  image:  tanyuzhentyz/hotel
   name: hotel-reserv-recommendation
   ports:
   - containerPort: 8085

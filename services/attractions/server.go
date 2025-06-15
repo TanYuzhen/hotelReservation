@@ -88,7 +88,22 @@ func (s *Server) Run() error {
 		opts = append(opts, tlsopt)
 	}
 
-	srv := grpc.NewServer(opts...)
+
+	srv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			otelgrpc.UnaryServerInterceptor(
+				otelgrpc.WithTracerProvider(s.TracerProvider),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+			),
+		),
+
+		grpc.ChainStreamInterceptor(
+			otelgrpc.StreamServerInterceptor(
+				otelgrpc.WithTracerProvider(s.TracerProvider),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+			),
+		),
+	)
 
 	pb.RegisterAttractionsServer(srv, s)
 
@@ -115,9 +130,6 @@ func (s *Server) Shutdown() {
 // NearbyRest returns all restaurants close to the hotel.
 func (s *Server) NearbyRest(ctx context.Context, req *pb.Request) (*pb.Result, error) {
 	log.Trace().Msgf("In Attractions NearbyRest")
-
-	ctx, span := s.Tracer.Start(ctx, "mongo_restaurant", trace.WithSpanKind(trace.SpanKindClient))
-	defer span.End()
 
 	c := s.MongoClient.Database("attractions-db").Collection("hotels")
 
@@ -152,9 +164,6 @@ func (s *Server) NearbyRest(ctx context.Context, req *pb.Request) (*pb.Result, e
 // NearbyMus returns all museums close to the hotel.
 func (s *Server) NearbyMus(ctx context.Context, req *pb.Request) (*pb.Result, error) {
 	log.Trace().Msgf("In Attractions NearbyMus")
-
-	ctx, span := s.Tracer.Start(ctx, "mongo_museum", trace.WithSpanKind(trace.SpanKindClient))
-	defer span.End()
 
 	c := s.MongoClient.Database("attractions-db").Collection("hotels")
 

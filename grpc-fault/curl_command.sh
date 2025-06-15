@@ -11,7 +11,7 @@ OUT_DATE="2015-04-15"
 LAT="38.0235"
 LON="-122.095"
 
-curl -v -X GET "http://10.102.252.7:5000/hotels?inDate=${IN_DATE}&outDate=${OUT_DATE}&lat=${LAT}&lon=${LON}" \
+curl -v -X GET "http://10.109.79.46:5000/hotels?inDate=${IN_DATE}&outDate=${OUT_DATE}&lat=${LAT}&lon=${LON}" \
   -H "traceparent: ${TRACEPARENT}" \
   -H "tracestate: ${TRACESTATE}" \
   -H "Accept: application/json" \

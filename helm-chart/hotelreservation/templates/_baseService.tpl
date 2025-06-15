@@ -7,7 +7,7 @@ spec:
   type: {{ .Values.serviceType | default .Values.global.serviceType }}
   ports:
   {{- range .Values.ports }}
-  - name: {{ if or (eq $.Values.name "geo") (eq $.Values.name "profile") (eq $.Values.name "recommendation") (eq $.Values.name "user") (eq $.Values.name "search") (eq $.Values.name "rate") (eq $.Values.name "review") (eq $.Values.name "reservation") }}grpc{{ else }}{{ .port | quote }}{{ end }}
+  - name: "{{ .port }}"
     port: {{ .port }}
     {{- if .protocol}}
     protocol: {{ .protocol }}

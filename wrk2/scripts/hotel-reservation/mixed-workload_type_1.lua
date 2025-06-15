@@ -116,7 +116,7 @@ request = function()
   local user_ratio        = 0.005
   local reserve_ratio     = 0.005
 
-  local coin = math.random()
+  local coin = 0.4
   if coin < search_ratio then
     return search_hotel(url)
   elseif coin < search_ratio + recommend_ratio then

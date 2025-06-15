@@ -67,31 +67,38 @@ func (s *Server) Run() error {
 
 	log.Info().Msg("Initializing gRPC clients...")
 	ctx := context.Background()
-	if err := s.initSearchClient(ctx, "srv-search"); err != nil {
+	// if err := s.initSearchClient(ctx, "srv-search"); err != nil {
+	if err:= s.initSearchClient(ctx, "search-hotel-hotelres:8082"); err != nil {
 		return err
 	}
 
-	if err := s.initProfileClient(ctx, "srv-profile"); err != nil {
+	// if err := s.initProfileClient(ctx, "srv-profile"); err != nil {
+	if err := s.initProfileClient(ctx, "profile-hotel-hotelres:8081"); err != nil {
 		return err
 	}
 
-	if err := s.initRecommendationClient(ctx, "srv-recommendation"); err != nil {
+	// if err := s.initRecommendationClient(ctx, "srv-recommendation"); err != nil {
+	if err := s.initRecommendationClient(ctx, "recommendation-hotel-hotelres:8085"); err != nil {
 		return err
 	}
 
-	if err := s.initUserClient(ctx, "srv-user"); err != nil {
+	// if err := s.initUserClient(ctx, "srv-user"); err != nil {
+	if err := s.initUserClient(ctx, "user-hotel-hotelres:8086"); err != nil {
 		return err
 	}
 
-	if err := s.initReservation(ctx, "srv-reservation"); err != nil {
+	// if err := s.initReservation(ctx, "srv-reservation"); err != nil {
+	if err := s.initReservation(ctx, "reservation-hotel-hotelres:8087"); err != nil {
 		return err
 	}
 
-	if err := s.initReviewClient(ctx, "srv-review"); err != nil {
+	// if err := s.initReviewClient(ctx, "srv-review"); err != nil {
+	if err := s.initReviewClient(ctx, "rate-hotel-hotelres:8084"); err != nil {
 		return err
 	}
 
-	if err := s.initAttractionsClient(ctx, "srv-attractions"); err != nil {
+	// if err := s.initAttractionsClient(ctx, "srv-attractions"); err != nil {
+	if err := s.initAttractionsClient(ctx, "geo-hotel-hotelres:8083"); err != nil {
 		return err
 	}
 
@@ -196,17 +203,20 @@ func (s *Server) getGprcConn(ctx context.Context, name string) (*grpc.ClientConn
 	log.Info().Msg(fmt.Sprintf("%s.%s", name, s.KnativeDns))
 
 	if s.KnativeDns != "" {
-		return dialer.Dial(
-			fmt.Sprintf("consul://%s/%s.%s", s.ConsulAddr, name, s.KnativeDns),
-			ctx,
-			dialer.WithTracerProvider(s.TracerProvider))
+		// return dialer.Dial(
+		// 	fmt.Sprintf("consul://%s/%s.%s", s.ConsulAddr, name, s.KnativeDns),
+		// 	ctx,
+		// 	s.TracerProvider,
+		// )
+		return dialer.Dial(name, ctx, s.TracerProvider)
 	} else {
-		return dialer.Dial(
-			fmt.Sprintf("consul://%s/%s", s.ConsulAddr, name),
-			ctx,
-			dialer.WithTracerProvider(s.TracerProvider),
-			dialer.WithBalancer(s.Registry.Client),
-		)
+		// return dialer.Dial(
+		// 	fmt.Sprintf("consul://%s/%s", s.ConsulAddr, name),
+		// 	ctx,
+		// 	s.TracerProvider,
+		// 	dialer.WithBalancer(s.Registry.Client),
+		// )
+		return dialer.Dial(name, ctx, s.TracerProvider, dialer.WithBalancer(s.Registry.Client))
 	}
 }
 
@@ -215,8 +225,6 @@ func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	log.Trace().Msg("starts searchHandler")
-	ctx, span := s.Tracer.Start(ctx, "searchHandler")
-	defer span.End()
 	// in/out dates from query params
 	inDate, outDate := r.URL.Query().Get("inDate"), r.URL.Query().Get("outDate")
 	if inDate == "" || outDate == "" {
@@ -240,6 +248,8 @@ func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Trace().Msgf("SEARCH [lat: %v, lon: %v, inDate: %v, outDate: %v", lat, lon, inDate, outDate)
 	// search for best hotels
+	sc := trace.SpanContextFromContext(ctx)
+	fmt.Printf("[CLIENT] about to call Search, trace=%s span=%s\n",sc.TraceID(), sc.SpanID())
 	searchResp, err := s.searchClient.Nearby(ctx, &search.NearbyRequest{
 		Lat:     lat,
 		Lon:     lon,
@@ -297,9 +307,6 @@ func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) recommendHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
-
-	ctx, span := s.Tracer.Start(ctx, "recommendHandler")
-	defer span.End()
 	sLat, sLon := r.URL.Query().Get("lat"), r.URL.Query().Get("lon")
 	if sLat == "" || sLon == "" {
 		http.Error(w, "Please specify location params", http.StatusBadRequest)
@@ -349,9 +356,6 @@ func (s *Server) recommendHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reviewHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
-
-	ctx, span := s.Tracer.Start(ctx, "reviewHandler")
-	defer span.End()
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
 		http.Error(w, "Please specify username and password", http.StatusBadRequest)
@@ -403,9 +407,6 @@ func (s *Server) reviewHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) restaurantHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
-
-	ctx, span := s.Tracer.Start(ctx, "restaurantHandler")
-	defer span.End()
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
 		http.Error(w, "Please specify username and password", http.StatusBadRequest)
@@ -561,9 +562,6 @@ func (s *Server) cinemaHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) userHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
-
-	ctx, span := s.Tracer.Start(ctx, "userHandler")
-	defer span.End()
 	username, password := r.URL.Query().Get("username"), r.URL.Query().Get("password")
 	if username == "" || password == "" {
 		http.Error(w, "Please specify username and password", http.StatusBadRequest)
@@ -595,9 +593,6 @@ func (s *Server) userHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reservationHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
-
-	ctx, span := s.Tracer.Start(ctx, "reservationHandler")
-	defer span.End()
 	inDate, outDate := r.URL.Query().Get("inDate"), r.URL.Query().Get("outDate")
 	if inDate == "" || outDate == "" {
 		http.Error(w, "Please specify inDate/outDate params", http.StatusBadRequest)

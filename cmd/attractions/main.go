@@ -65,7 +65,7 @@ func main() {
 	flag.Parse()
 
 	log.Info().Msgf("Initializing jaeger agent [service name: %v | host: %v]...", "attractions", *jaegeraddr)
-	tracer, tp, err := oteltracing.Init("attractions", *jaegeraddr)
+	tracer, tp, err := oteltracing.Init("attractions-hotel-hotelres", *jaegeraddr)
 	if err != nil {
 		log.Panic().Msgf("Got error while initializing jaeger agent: %v", err)
 	}

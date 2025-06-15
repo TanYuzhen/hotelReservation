@@ -6,7 +6,7 @@ ports:
 
 container:
   command: /go/bin/frontend
-  image: deathstarbench/hotel-reservation
+  image:  tanyuzhentyz/hotel
   name: hotel-reserv-frontend
   ports:
   - containerPort: 5000

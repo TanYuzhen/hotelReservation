@@ -12,8 +12,6 @@ dependencies:
     version: 0.1.0
   - name: geo
     version: 0.1.0
-  - name: jaeger
-    version: 0.1.0
   - name: memcached-profile
     version: 0.1.0
   - name: memcached-rate

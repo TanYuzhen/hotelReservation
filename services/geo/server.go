@@ -55,14 +55,16 @@ func (s *Server) Run() error {
 	s.uuid = uuid.New().String()
 
 	opts := []grpc.ServerOption{
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Timeout: 120 * time.Second,
-		}),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			PermitWithoutStream: true,
-		}),
-		grpc.UnaryInterceptor(
+		grpc.KeepaliveParams(keepalive.ServerParameters{ Timeout: 120 * time.Second }),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{ PermitWithoutStream: true }),
+		grpc.ChainUnaryInterceptor(
 			otelgrpc.UnaryServerInterceptor(
+				otelgrpc.WithTracerProvider(s.TracerProvider),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			),
+		),
+		grpc.ChainStreamInterceptor(
+			otelgrpc.StreamServerInterceptor(
 				otelgrpc.WithTracerProvider(s.TracerProvider),
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			),
@@ -72,8 +74,23 @@ func (s *Server) Run() error {
 	if tlsopt := tls.GetServerOpt(); tlsopt != nil {
 		opts = append(opts, tlsopt)
 	}
+	
+	srv := grpc.NewServer(opts...)  
+	// srv := grpc.NewServer(
+	// 	grpc.ChainUnaryInterceptor(
+	// 		otelgrpc.UnaryServerInterceptor(
+	// 			otelgrpc.WithTracerProvider(s.TracerProvider),
+	// 			otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+	// 		),
+	// 	),
 
-	srv := grpc.NewServer(opts...)
+	// 	grpc.ChainStreamInterceptor(
+	// 		otelgrpc.StreamServerInterceptor(
+	// 			otelgrpc.WithTracerProvider(s.TracerProvider),
+	// 			otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+	// 		),
+	// 	),
+	// )
 
 	pb.RegisterGeoServer(srv, s)
 
@@ -100,10 +117,6 @@ func (s *Server) Shutdown() {
 // Nearby returns all hotels within a given distance.
 func (s *Server) Nearby(ctx context.Context, req *pb.Request) (*pb.Result, error) {
 	log.Trace().Msgf("In geo Nearby")
-
-	ctx, span := s.Tracer.Start(ctx, "geoService")
-	defer span.End()
-
 	var (
 		points = s.getNearbyPoints(ctx, float64(req.Lat), float64(req.Lon))
 		res    = &pb.Result{}

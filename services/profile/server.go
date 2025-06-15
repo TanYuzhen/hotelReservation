@@ -50,16 +50,18 @@ func (s *Server) Run() error {
 	s.uuid = uuid.New().String()
 
 	log.Trace().Msgf("in run s.IpAddr = %s, port = %d", s.IpAddr, s.Port)
-
+	
 	opts := []grpc.ServerOption{
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Timeout: 120 * time.Second,
-		}),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			PermitWithoutStream: true,
-		}),
-		grpc.UnaryInterceptor(
+		grpc.KeepaliveParams(keepalive.ServerParameters{ Timeout: 120 * time.Second }),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{ PermitWithoutStream: true }),
+		grpc.ChainUnaryInterceptor(
 			otelgrpc.UnaryServerInterceptor(
+				otelgrpc.WithTracerProvider(s.TracerProvider),
+				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
+			),
+		),
+		grpc.ChainStreamInterceptor(
+			otelgrpc.StreamServerInterceptor(
 				otelgrpc.WithTracerProvider(s.TracerProvider),
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			),
@@ -69,8 +71,25 @@ func (s *Server) Run() error {
 	if tlsopt := tls.GetServerOpt(); tlsopt != nil {
 		opts = append(opts, tlsopt)
 	}
+	
+	srv := grpc.NewServer(opts...)  
 
-	srv := grpc.NewServer(opts...)
+
+	// srv := grpc.NewServer(
+	// 	grpc.ChainUnaryInterceptor(
+	// 		otelgrpc.UnaryServerInterceptor(
+	// 			otelgrpc.WithTracerProvider(s.TracerProvider),
+	// 			otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+	// 		),
+	// 	),
+
+	// 	grpc.ChainStreamInterceptor(
+	// 		otelgrpc.StreamServerInterceptor(
+	// 			otelgrpc.WithTracerProvider(s.TracerProvider),
+	// 			otelgrpc.WithPropagators(otel.GetTextMapPropagator()), 
+	// 		),
+	// 	),
+	// )
 
 	pb.RegisterProfileServer(srv, s)
 
@@ -96,13 +115,8 @@ func (s *Server) Shutdown() {
 // GetProfiles returns hotel profiles for requested IDs
 func (s *Server) GetProfiles(ctx context.Context, req *pb.Request) (*pb.Result, error) {
 	log.Trace().Msgf("In GetProfiles")
-	
-	ctx, span := s.Tracer.Start(ctx, "searchHandler")
-	defer span.End()
-	
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
-
 	// one hotel should only have one profile
 	hotelIds := make([]string, 0)
 	profileMap := make(map[string]struct{})

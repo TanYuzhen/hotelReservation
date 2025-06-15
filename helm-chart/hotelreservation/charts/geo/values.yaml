@@ -6,7 +6,7 @@ ports:
  
 container:
   command: /go/bin/geo
-  image: deathstarbench/hotel-reservation
+  image:  tanyuzhentyz/hotel
   name: hotel-reserv-geo
   ports:
   - containerPort: 8083
